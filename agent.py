@@ -8,12 +8,12 @@ class DQNAgent:
         self,
         state_shape,
         action_size,
-        learning_rate=0.0001,
+        learning_rate=0.00025,
         gamma=0.99,
         epsilon=1.0,
         epsilon_min=0.1,
         epsilon_decay=0.9995,
-        buffer_capacity=10000,
+        buffer_capacity=100000,
         batch_size=32
     ):
         # Environment parameters
@@ -61,7 +61,7 @@ class DQNAgent:
         return np.argmax(q_values[0])
     
     def train(self):
-        """Train the agent using a batch of experiences from the replay buffer."""
+        """Train the agent using Double DQN algorithm with experience replay."""
         # Skip if buffer doesn't have enough experiences
         if len(self.replay_buffer) < self.batch_size:
             return
@@ -76,7 +76,10 @@ class DQNAgent:
         # Get current Q-values for all actions in current states
         current_q_values = self.model.predict_on_batch(states)
         
-        # Get next Q-values from target network
+        # DOUBLE DQN: Get actions from main network
+        next_actions = np.argmax(self.model.predict_on_batch(next_states), axis=1)
+        
+        # Get Q-values from target network
         next_q_values = self.target_model.predict_on_batch(next_states)
         
         # Update Q-values for the actions taken
@@ -85,17 +88,17 @@ class DQNAgent:
                 # If done, no future rewards
                 current_q_values[i, actions[i]] = rewards[i]
             else:
-                # Update with reward + discounted max future Q-value
-                current_q_values[i, actions[i]] = rewards[i] + self.gamma * np.max(next_q_values[i])
+                # Double DQN: Use main network to select action, target network to evaluate it
+                current_q_values[i, actions[i]] = rewards[i] + self.gamma * next_q_values[i, next_actions[i]]
         
-        # Train the model with updated Q-values using fit_on_batch (faster)
+        # Train the model with updated Q-values
         self.model.train_on_batch(states, current_q_values)
         
         # Decay epsilon for less exploration over time
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
         
-        # Update target network periodically
+        # Update target network periodically (every 1000 steps)
         self.learning_step += 1
         if self.learning_step % 1000 == 0:
             self.update_target_network()

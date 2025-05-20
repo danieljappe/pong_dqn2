@@ -11,7 +11,9 @@ class PongEnvironment:
         else:
             self.env = gym.make("PongNoFrameskip-v4", render_mode=render_mode)
             
-        self.action_space = self.env.action_space
+        # Map Pong's 6 actions to the 3 that matter: NOOP (0), UP (2), DOWN (3)
+        self.action_mapping = [0, 2, 3]  
+        self.action_space = gym.spaces.Discrete(len(self.action_mapping))
         self.observation_space = self.env.observation_space
         
         # Track previous observations and paddle position
@@ -19,6 +21,9 @@ class PongEnvironment:
         self.paddle_y = None  # Track the agent's paddle position
         self.debug_mode = False  # Set to False for less output
         self.steps_since_print = 0
+        
+        # Initialize frame stack
+        self.frame_stack = None
         
         # Print environment info only once
         print(f"Environment created. Action space: {self.action_space}, Observation space: {self.observation_space.shape}")
@@ -35,13 +40,17 @@ class PongEnvironment:
         self.previous_observation = None
         self.paddle_y = None
         self.steps_since_print = 0
+        self.frame_stack = None
         
         return observation
     
     def step(self, action):
-        """Take a step in the environment."""
+        """Take a step in the environment with the mapped action."""
+        # Map the action
+        env_action = self.action_mapping[action]
+        
         # Take action
-        result = self.env.step(action)
+        result = self.env.step(env_action)
         
         # Handle different gym versions that might return different formats
         if len(result) == 5:  # gymnasium format
@@ -154,7 +163,7 @@ class PongEnvironment:
                     # Give a small reward for paddle being close to ball's vertical position
                     vertical_diff = abs(paddle_y - ball_y)
                     if vertical_diff < 15:  # Within 15 pixels is good alignment
-                        positioning_reward = 0.03
+                        positioning_reward = 0.01  # Reduced from 0.03
                         total_reward += positioning_reward
                         pos_reward += positioning_reward
                         alignment_count += 1
@@ -182,29 +191,40 @@ class PongEnvironment:
         """Close the environment."""
         self.env.close()
         
-    def preprocess_observation(self, observation):
+    def preprocess_observation(self, observation, stack_size=4):
         """
-        Preprocess the observation:
+        Preprocess the observation and stack frames to capture motion:
         1. Convert to grayscale
         2. Resize to 84x84
         3. Normalize pixel values
+        4. Stack last 4 frames
         """
-        # Ensure observation is a numpy array
+        # Initialize frame stack if it doesn't exist
+        if self.frame_stack is None:
+            self.frame_stack = deque(maxlen=stack_size)
+            for _ in range(stack_size):
+                self.frame_stack.append(np.zeros((84, 84), dtype=np.float32))
+        
+        # Process current frame
         if observation is None:
-            return np.zeros((84, 84, 1), dtype=np.float32)
-        
-        # Handle different return types
-        if isinstance(observation, tuple):
-            observation = observation[0]
+            processed = np.zeros((84, 84), dtype=np.float32)
+        else:
+            # Handle different return types
+            if isinstance(observation, tuple):
+                observation = observation[0]
+                
+            # Convert RGB to grayscale
+            gray = cv2.cvtColor(observation, cv2.COLOR_RGB2GRAY)
             
-        # Convert RGB to grayscale
-        gray = cv2.cvtColor(observation, cv2.COLOR_RGB2GRAY)
+            # Resize to 84x84
+            resized = cv2.resize(gray, (84, 84), interpolation=cv2.INTER_AREA)
+            
+            # Normalize pixel values to [0, 1]
+            processed = resized / 255.0
         
-        # Resize to 84x84
-        resized = cv2.resize(gray, (84, 84), interpolation=cv2.INTER_AREA)
+        # Add to stack
+        self.frame_stack.append(processed)
         
-        # Normalize pixel values to [0, 1]
-        normalized = resized / 255.0
-        
-        # Reshape to include a channel dimension (84, 84, 1)
-        return normalized.reshape(84, 84, 1)
+        # Stack frames to form a single state
+        stacked_state = np.stack(list(self.frame_stack), axis=2)
+        return stacked_state  # Shape will be (84, 84, 4)
