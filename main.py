@@ -3,34 +3,43 @@ import numpy as np
 import tensorflow as tf
 import os
 import matplotlib.pyplot as plt
+import gc  # Add garbage collector
 from environment import PongEnvironment
 from agent import DQNAgent
 from utils import plot_rewards, print_training_stats, log_episode_results
 import multiprocessing
 
+# Force CPU only - more reliable configuration
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+print("Forced CPU mode for reliable training")
+
 # Disable TensorFlow warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
-# Check for CPU/GPU
-physical_devices = tf.config.list_physical_devices('GPU')
-if len(physical_devices) > 0:
-    print(f"Found {len(physical_devices)} GPU(s)")
-    for device in physical_devices:
-        try:
-            tf.config.experimental.set_memory_growth(device, True)
-            print(f"Memory growth enabled for {device}")
-        except Exception as e:
-            print(f"Error configuring GPU: {e}")
-else:
-    print("No GPU found. Running on CPU with optimized settings.")
-    # Set number of threads based on CPU cores
-    NUM_CPU = multiprocessing.cpu_count()
-    print(f"Number of CPU cores: {NUM_CPU}")
-    tf.config.threading.set_inter_op_parallelism_threads(NUM_CPU // 2)
-    tf.config.threading.set_intra_op_parallelism_threads(NUM_CPU // 2)
-    print(f"TensorFlow thread settings: inter_op={NUM_CPU // 2}, intra_op={NUM_CPU // 2}")
+# Set seeds for reproducibility
+SEED = 42
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
 
+# Configure CPU threading for better performance
+NUM_CPU = multiprocessing.cpu_count()
+print(f"Number of CPU cores: {NUM_CPU}")
+tf.config.threading.set_inter_op_parallelism_threads(NUM_CPU // 2)
+tf.config.threading.set_intra_op_parallelism_threads(NUM_CPU // 2)
+print(f"TensorFlow thread settings: inter_op={NUM_CPU // 2}, intra_op={NUM_CPU // 2}")
+
+def monitor_system_resources():
+    """Monitor system resources (CPU usage and memory)"""
+    try:
+        import psutil
+        cpu_percent = psutil.cpu_percent()
+        memory_info = psutil.virtual_memory()
+        memory_used_gb = memory_info.used / (1024 ** 3)
+        memory_total_gb = memory_info.total / (1024 ** 3)
+        return f"CPU: {cpu_percent}% | RAM: {memory_used_gb:.1f}/{memory_total_gb:.1f} GB ({memory_info.percent}%)"
+    except ImportError:
+        return None  # psutil not available
 
 def train_dqn(render_mode=None, frame_skip=4, episodes=500, report_interval=10, run_name="default_run"):
     """Train a DQN agent to play Pong."""
@@ -50,17 +59,17 @@ def train_dqn(render_mode=None, frame_skip=4, episodes=500, report_interval=10, 
     state_shape = (84, 84, 4)  # 4 stacked frames
     action_size = env.action_space.n  # Should be 3 now (UP, DOWN, NOOP)
     
-    # Create the DQN agent with parameters optimized for CPU
+    # Create the DQN agent with improved learning parameters
     agent = DQNAgent(
         state_shape=state_shape,
         action_size=action_size,
-        learning_rate=0.00025,
-        gamma=0.99,
-        epsilon=1.0,
-        epsilon_min=0.1,
-        epsilon_decay=0.995,    # Decay once per episode
-        buffer_capacity=50000,  # Reduced for CPU memory constraints
-        batch_size=16           # Smaller batch size for CPU
+        learning_rate=0.0001,       # Reduced for more stable learning
+        gamma=0.99,                 # Unchanged discount factor
+        epsilon=1.0,                # Start with full exploration
+        epsilon_min=0.05,           # Lower minimum epsilon for better exploitation
+        epsilon_decay=0.998,        # Slower decay for more exploration
+        buffer_capacity=100000,     # Increased buffer size
+        batch_size=32               # Increased batch size for better learning
     )
     
     # Training parameters
@@ -95,8 +104,8 @@ def train_dqn(render_mode=None, frame_skip=4, episodes=500, report_interval=10, 
             episode_scores_made = 0
             episode_scores_against = 0
             
-            # Training step frequency (train every N steps to reduce CPU load)
-            train_frequency = 4  # Only train every 4 steps
+            # Training step frequency (train every step for better learning)
+            train_frequency = 1  # Train on every step
             
             # Episode loop
             for step in range(max_steps_per_episode):
@@ -204,9 +213,10 @@ def train_dqn(render_mode=None, frame_skip=4, episodes=500, report_interval=10, 
                 avg_steps_per_second = total_steps / total_duration if total_duration > 0 else 0
                 print(f"  ⏱️ Performance: {avg_steps_per_second:.1f} steps/second average")
                 
-            # Clean up to prevent memory leaks (if running on limited resources)
-            if episode % 10 == 0 and episode > 0:
-                tf.keras.backend.clear_session()
+            # Clean up memory more aggressively (after every episode)
+            tf.keras.backend.clear_session()
+            import gc
+            gc.collect()  # Force garbage collection
                 
             # Print a blank line for readability
             print()
@@ -218,6 +228,8 @@ def train_dqn(render_mode=None, frame_skip=4, episodes=500, report_interval=10, 
         agent.model.save(f"models/{run_name}_final.h5")
         print(f"Training complete. Final model saved to models/{run_name}_final.h5")
         print(f"Results saved to {log_file}")
+        # Save rewards history to a text file
+        np.savetxt(f"logs/{run_name}_rewards.txt", episode_rewards)
         
     except KeyboardInterrupt:
         print(f"\nTraining interrupted. Saving model...")
@@ -266,9 +278,72 @@ def test_random_agent(render_mode="human", steps=1000):
     # Close the environment
     env.close()
 
+def continue_training(checkpoint_path, render_mode=None, frame_skip=4, start_episode=0, 
+                     episodes=500, report_interval=10, run_name="continued_run"):
+    """Continue training from a saved checkpoint."""
+    print(f"Continuing training from checkpoint: {checkpoint_path}")
+    
+    # Create log and model directories if they don't exist
+    os.makedirs("logs", exist_ok=True)
+    os.makedirs("models", exist_ok=True)
+    
+    # Create log file path
+    log_file = f"logs/{run_name}.csv"
+    
+    # Create the Pong environment
+    env = PongEnvironment(render_mode=render_mode)
+    
+    # Define parameters with frame stacking
+    state_shape = (84, 84, 4)
+    action_size = env.action_space.n
+    
+    # Create a temporary agent to get the structure
+    temp_agent = DQNAgent(
+        state_shape=state_shape,
+        action_size=action_size,
+        learning_rate=0.0001,
+        gamma=0.99,
+        epsilon=0.5,  # Will be overridden
+        epsilon_min=0.05,
+        epsilon_decay=0.998,
+        buffer_capacity=100000,
+        batch_size=32
+    )
+    
+    # Load the saved model weights
+    temp_agent.model.load_weights(checkpoint_path)
+    temp_agent.target_model.load_weights(checkpoint_path)
+    
+    # Now create the real agent with the loaded weights
+    agent = DQNAgent(
+        state_shape=state_shape,
+        action_size=action_size,
+        learning_rate=0.0001,
+        gamma=0.99,
+        epsilon=0.2,  # Set epsilon based on training progress
+        epsilon_min=0.05,
+        epsilon_decay=0.998,
+        buffer_capacity=100000,
+        batch_size=32
+    )
+    
+    agent.model.set_weights(temp_agent.model.get_weights())
+    agent.target_model.set_weights(temp_agent.model.get_weights())
+    del temp_agent
+    
+    # Load previous rewards if available
+    try:
+        episode_rewards = list(np.loadtxt(f"logs/{run_name}_rewards.txt"))
+        print(f"Loaded {len(episode_rewards)} previous reward values")
+    except:
+        episode_rewards = []
+        print("No previous rewards found, starting fresh reward tracking")
+
 if __name__ == "__main__":
     # Configuration options
-    mode = "train"           # Options: "train", "random" 
+    mode = "train"           # Options: "train", "continue", "test", "random" 
+    checkpoint_path = None   # Path to checkpoint file when using "continue" mode
+    start_episode = 0        # Episode to start from when continuing
     render_enable = False    # Set to True to visualize, False for faster training
     frame_skip = 4           # Number of frames to skip per action
     run_name = "cpu_dqn"     # Name for this training run (used for logging)
@@ -276,29 +351,12 @@ if __name__ == "__main__":
     # Set render mode based on configuration
     render_mode = "human" if render_enable else None
     
-    # Check CPU configuration
-    print("\n=== System Configuration ===")
-    import psutil
-    cpu_count = psutil.cpu_count(logical=False)
-    logical_cpu_count = psutil.cpu_count(logical=True)
-    memory_info = psutil.virtual_memory()
-    memory_gb = memory_info.total / (1024**3)
-    
-    print(f"Physical CPU cores: {cpu_count}")
-    print(f"Logical CPU cores: {logical_cpu_count}")
-    print(f"Total system memory: {memory_gb:.2f} GB")
-    print(f"Available memory: {(memory_info.available / (1024**3)):.2f} GB")
-    
-    # Install psutil for monitoring if not available
-    try:
-        import psutil
-    except ImportError:
-        print("psutil not installed. Installing for system monitoring...")
-        import subprocess
-        subprocess.check_call(["pip", "install", "psutil"])
-        print("psutil installed successfully.")
+    # [rest of your existing code]
     
     if mode == "train":
         train_dqn(render_mode=render_mode, frame_skip=frame_skip, run_name=run_name)
+    elif mode == "continue" and checkpoint_path:
+        continue_training(checkpoint_path, render_mode=render_mode, frame_skip=frame_skip, 
+                         start_episode=start_episode, run_name=run_name)
     elif mode == "random":
         test_random_agent(render_mode=render_mode)

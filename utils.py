@@ -16,6 +16,7 @@ def plot_rewards(episode_rewards, window=100, filename="training_progress.png"):
     plt.ylabel('Total Reward')
     plt.title('Training Progress')
     plt.legend()
+    plt.grid(True, alpha=0.3)
     plt.savefig(filename)
     plt.close()
 

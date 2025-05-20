@@ -8,13 +8,13 @@ class DQNAgent:
         self,
         state_shape,
         action_size,
-        learning_rate=0.00025,
+        learning_rate=0.0001,  # Reduced learning rate for more stable learning
         gamma=0.99,
         epsilon=1.0,
-        epsilon_min=0.1,
-        epsilon_decay=0.9995,
-        buffer_capacity=100000,
-        batch_size=32
+        epsilon_min=0.05,  # Lower minimum epsilon for more exploitation
+        epsilon_decay=0.998,  # Slower decay to allow more exploration
+        buffer_capacity=50000,  # Reduced for CPU
+        batch_size=32  # Increased batch size for better learning
     ):
         # Environment parameters
         self.state_shape = state_shape
@@ -93,10 +93,6 @@ class DQNAgent:
         
         # Train the model with updated Q-values
         self.model.train_on_batch(states, current_q_values)
-        
-        # Decay epsilon for less exploration over time
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
         
         # Update target network periodically (every 1000 steps)
         self.learning_step += 1

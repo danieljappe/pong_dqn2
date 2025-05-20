@@ -163,7 +163,18 @@ class PongEnvironment:
                     # Give a small reward for paddle being close to ball's vertical position
                     vertical_diff = abs(paddle_y - ball_y)
                     if vertical_diff < 15:  # Within 15 pixels is good alignment
-                        positioning_reward = 0.01  # Reduced from 0.03
+                        # Scale reward based on ball position - more reward when ball is closer
+                        if ball_x is not None:
+                            # Define the boundaries for left paddle and right side
+                            left_paddle_boundary = 20
+                            right_side_boundary = 140
+                            
+                            # Normalize to 0-1 range and invert so closer to paddle = higher reward
+                            ball_closeness = 1.0 - ((right_side_boundary - ball_x) / (right_side_boundary - left_paddle_boundary))
+                            positioning_reward = 0.01 * (1.0 + 2.0 * ball_closeness)  # More reward when ball is closer
+                        else:
+                            positioning_reward = 0.01
+                        
                         total_reward += positioning_reward
                         pos_reward += positioning_reward
                         alignment_count += 1
