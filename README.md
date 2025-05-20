@@ -1,3 +1,11 @@
+# Create venv:
+´py -3.10 -m venv venv´
+# Activate venv
+´.\venv\Scripts\Activate´
+# isntall libaries in environment
+´pip install -r requirements.txt´
+
+
 pong3/
 │
 ├── main.py                # Main script to run the training
