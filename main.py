@@ -318,11 +318,11 @@ def continue_training(checkpoint_path, render_mode=None, frame_skip=4, start_epi
     agent = DQNAgent(
         state_shape=state_shape,
         action_size=action_size,
-        learning_rate=0.0001,
+        learning_rate=0.00015,
         gamma=0.99,
-        epsilon=0.2,  # Set epsilon based on training progress
+        epsilon=0.8,  # Set epsilon based on training progress
         epsilon_min=0.05,
-        epsilon_decay=0.998,
+        epsilon_decay=0.997,
         buffer_capacity=100000,
         batch_size=32
     )
@@ -346,7 +346,7 @@ if __name__ == "__main__":
     start_episode = 0        # Episode to start from when continuing
     render_enable = False    # Set to True to visualize, False for faster training
     frame_skip = 4           # Number of frames to skip per action
-    run_name = "cpu_dqn"     # Name for this training run (used for logging)
+    run_name = "long_runv2"     # Name for this training run (used for logging)
     
     # Set render mode based on configuration
     render_mode = "human" if render_enable else None

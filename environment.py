@@ -139,7 +139,7 @@ class PongEnvironment:
             
             # If the agent scored, add a significant bonus
             if reward == 1:
-                bonus = 0.5
+                bonus = 3.0 # 0.5 -> 3.0 for more reward when scoring
                 total_reward += bonus
                 print(f"  🏆 Agent scored! (+{1.0 + bonus:.1f})")
             elif reward == -1:
@@ -171,7 +171,7 @@ class PongEnvironment:
                             
                             # Normalize to 0-1 range and invert so closer to paddle = higher reward
                             ball_closeness = 1.0 - ((right_side_boundary - ball_x) / (right_side_boundary - left_paddle_boundary))
-                            positioning_reward = 0.01 * (1.0 + 2.0 * ball_closeness)  # More reward when ball is closer
+                            positioning_reward = 0.01 * (1.0 + 3.0 * ball_closeness)  # More reward when ball is closer ---- Increased from 2.0 to 3.0
                         else:
                             positioning_reward = 0.01
                         

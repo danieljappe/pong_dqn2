@@ -8,13 +8,13 @@ class DQNAgent:
         self,
         state_shape,
         action_size,
-        learning_rate=0.0001,  # Reduced learning rate for more stable learning
+        learning_rate=0.00015,  # Increased from 0.0001
         gamma=0.99,
-        epsilon=1.0,
-        epsilon_min=0.05,  # Lower minimum epsilon for more exploitation
-        epsilon_decay=0.998,  # Slower decay to allow more exploration
-        buffer_capacity=50000,  # Reduced for CPU
-        batch_size=32  # Increased batch size for better learning
+        epsilon=0.368,  # Starting from where long_run_final left off
+        epsilon_min=0.05,
+        epsilon_decay=0.997,  # Slightly faster decay to speed up transition to exploitation
+        buffer_capacity=100000,
+        batch_size=32
     ):
         # Environment parameters
         self.state_shape = state_shape
@@ -96,6 +96,6 @@ class DQNAgent:
         
         # Update target network periodically (every 1000 steps)
         self.learning_step += 1
-        if self.learning_step % 1000 == 0:
+        if self.learning_step % 500 == 0: # Target Network Update Frequency 1000 -> 500
             self.update_target_network()
             print(f"Step {self.learning_step}: Target network updated. Epsilon: {self.epsilon:.4f}")
